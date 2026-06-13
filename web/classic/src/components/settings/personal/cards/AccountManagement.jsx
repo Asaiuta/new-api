@@ -101,6 +101,7 @@ const AccountManagement = ({
     React.useState(false);
   const [customOAuthBindings, setCustomOAuthBindings] = React.useState([]);
   const [customOAuthLoading, setCustomOAuthLoading] = React.useState({});
+  const userOAuthUnbindDisabled = Boolean(status?.oauth_disable_user_unbind);
 
   // Fetch custom OAuth bindings
   const loadCustomOAuthBindings = async () => {
@@ -118,6 +119,11 @@ const AccountManagement = ({
 
   // Unbind custom OAuth provider
   const handleUnbindCustomOAuth = async (providerId, providerName) => {
+    if (userOAuthUnbindDisabled) {
+      showError(t('管理员已禁止用户解绑第三方登录'));
+      return;
+    }
+
     Modal.confirm({
       title: t('确认解绑'),
       content: t('确定要解绑 {{name}} 吗？', { name: providerName }),
@@ -553,11 +559,14 @@ const AccountManagement = ({
                               theme='outline'
                               size='small'
                               loading={customOAuthLoading[provider.id]}
+                              disabled={userOAuthUnbindDisabled}
                               onClick={() =>
                                 handleUnbindCustomOAuth(provider.id, provider.name)
                               }
                             >
-                              {t('解绑')}
+                              {userOAuthUnbindDisabled
+                                ? t('已禁止解绑')
+                                : t('解绑')}
                             </Button>
                           ) : (
                             <Button

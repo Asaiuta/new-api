@@ -521,6 +521,8 @@
     "例如：-c": "e.g.: -c",
     "例如：/bin/bash": "e.g.: /bin/bash",
     "例如：0001": "e.g.: 0001",
+    "例如：0.1": "e.g.: 0.1",
+    "例如：0.2": "e.g.: 0.2",
     "例如：1000": "e.g.: 1000",
     "例如：100000": "e.g.: 100000",
     "例如：2，就是最低充值2$": "e.g.: 2, means minimum top-up is $2",
@@ -575,6 +577,7 @@
     "保存 Turnstile 设置": "Save Turnstile Settings",
     "保存 WeChat Server 设置": "Save WeChat Server Settings",
     "保存分组倍率设置": "Save group ratio settings",
+    "保存后将转换为 {{quota}} 内部额度": "Saved as {{quota}} internal quota",
     "保存分组相关设置": "Save Group Related Settings",
     "保存备用码": "Save backup codes",
     "保存备用码以备不时之需": "Save backup codes for emergencies",
@@ -1464,6 +1467,7 @@
     "开启之后将上游地址替换为服务器地址": "After enabling, the upstream address will be replaced with the server address",
     "开启后，using_group 会参与 cache key（不同分组隔离）。": "When enabled, using_group will be part of the cache key (isolated by group).",
     "开启后，仅\"消费\"和\"错误\"日志将记录您的客户端IP地址": "After enabling, only \"consumption\" and \"error\" logs will record your client IP address",
+    "开启后，即使用户未开启个人IP记录，也会在消费和错误日志中记录客户端IP": "After enabled, client IP addresses are recorded in consumption and error logs even if the user has not enabled personal IP logging",
     "开启后，对免费模型（倍率为0，或者价格为0）的模型也会预消耗额度": "After enabling, free models (ratio 0 or price 0) will also pre-consume quota",
     "开启后，将定期发送ping数据保持连接活跃": "After enabling, ping data will be sent periodically to keep the connection active",
     "开启后，当前分组渠道失败时会按顺序尝试下一个分组的渠道": "After enabling, when the current group channel fails, it will try the next group's channel in order",
@@ -1487,6 +1491,7 @@
     "异步任务退款": "Async Task Refund",
     "张图片": " images",
     "弱变换": "High Variation",
+    "强制为所有用户记录IP": "Force IP logging for all users",
     "强制使用 AUTH LOGIN": "Force AUTH LOGIN",
     "强制将响应格式化为 OpenAI 标准格式（只适用于OpenAI渠道类型）": "Force format responses to OpenAI standard format (Only for OpenAI channel types)",
     "强制格式化": "Force format",
@@ -2686,6 +2691,7 @@
     "系统设置": "System",
     "系统访问令牌": "System Access Token",
     "约": "Approximately",
+    "约 {{amount}} USD": "Approx. {{amount}} USD",
     "索引": "Index",
     "紧凑列表": "Compact list",
     "纯字符串会直接覆盖整条请求头，或者点击“查看 JSON 示例”按 token 规则处理。": "",
@@ -3821,6 +3827,10 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "禁止用户解绑第三方登录": "Prevent users from unbinding third-party login",
+    "禁止普通用户解绑自己的自定义 OAuth 登录绑定，管理员仍可在用户管理中解绑。": "Prevent regular users from unbinding their own custom OAuth login bindings. Administrators can still unbind them in user management.",
+    "管理员已禁止用户解绑第三方登录": "The administrator has disabled third-party login unbinding",
+    "已禁止解绑": "Unbind disabled"
   }
 }

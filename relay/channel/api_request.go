@@ -9,18 +9,14 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -188,6 +184,10 @@ func applyHeaderOverridePlaceholders(template string, c *gin.Context, apiKey str
 //
 // Passthrough rules are applied first, then normal overrides are applied, so explicit overrides win.
 func processHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]string, error) {
+	if !hasEffectiveHeaderOverride(info) {
+		return nil, nil
+	}
+
 	headerOverride := make(map[string]string)
 	if info == nil {
 		return headerOverride, nil
@@ -287,6 +287,19 @@ func processHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]s
 	return headerOverride, nil
 }
 
+func hasEffectiveHeaderOverride(info *common.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	if info.UseRuntimeHeadersOverride {
+		return len(info.RuntimeHeadersOverride) > 0
+	}
+	if info.ChannelMeta == nil {
+		return false
+	}
+	return len(info.ChannelMeta.HeadersOverride) > 0
+}
+
 func ResolveHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]string, error) {
 	return processHeaderOverride(info, c)
 }
@@ -304,13 +317,20 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+func upstreamRequestContext(c *gin.Context) context.Context {
+	if c != nil && c.Request != nil {
+		return c.Request.Context()
+	}
+	return context.Background()
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
 	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	req, err := http.NewRequestWithContext(upstreamRequestContext(c), c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -340,7 +360,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
 	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	req, err := http.NewRequestWithContext(upstreamRequestContext(c), c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -396,91 +416,6 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	return targetConn, nil
 }
 
-func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) context.CancelFunc {
-	pingerCtx, stopPinger := context.WithCancel(context.Background())
-
-	gopool.Go(func() {
-		defer func() {
-			// 增加panic恢复处理
-			if r := recover(); r != nil {
-				logger.LogDebug(c, "SSE ping goroutine panic recovered: %v", r)
-			}
-			logger.LogDebug(c, "SSE ping goroutine stopped")
-		}()
-
-		if pingInterval <= 0 {
-			pingInterval = helper.DefaultPingInterval
-		}
-
-		ticker := time.NewTicker(pingInterval)
-		// 确保在任何情况下都清理ticker
-		defer func() {
-			ticker.Stop()
-			logger.LogDebug(c, "SSE ping ticker stopped")
-		}()
-
-		var pingMutex sync.Mutex
-		logger.LogDebug(c, "SSE ping goroutine started")
-
-		// 增加超时控制，防止goroutine长时间运行
-		maxPingDuration := 120 * time.Minute // 最大ping持续时间
-		pingTimeout := time.NewTimer(maxPingDuration)
-		defer pingTimeout.Stop()
-
-		for {
-			select {
-			// 发送 ping 数据
-			case <-ticker.C:
-				if err := sendPingData(c, &pingMutex); err != nil {
-					logger.LogDebug(c, "SSE ping error, stopping goroutine: %s", err.Error())
-					return
-				}
-			// 收到退出信号
-			case <-pingerCtx.Done():
-				return
-			// request 结束
-			case <-c.Request.Context().Done():
-				return
-			// 超时保护，防止goroutine无限运行
-			case <-pingTimeout.C:
-				logger.LogDebug(c, "SSE ping goroutine timeout, stopping")
-				return
-			}
-		}
-	})
-
-	return stopPinger
-}
-
-func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
-	// 增加超时控制，防止锁死等待
-	done := make(chan error, 1)
-	go func() {
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		err := helper.PingData(c)
-		if err != nil {
-			logger.LogError(c, "SSE ping error: "+err.Error())
-			done <- err
-			return
-		}
-
-		logger.LogDebug(c, "SSE ping data sent")
-		done <- nil
-	}()
-
-	// 设置发送ping数据的超时时间
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(10 * time.Second):
-		return errors.New("SSE ping data send timeout")
-	case <-c.Request.Context().Done():
-		return errors.New("request context cancelled during ping")
-	}
-}
-
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
@@ -496,22 +431,8 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		client = service.GetHttpClient()
 	}
 
-	var stopPinger context.CancelFunc
 	if info.IsStream {
-		helper.SetEventStreamHeaders(c)
-		// 处理流式请求的 ping 保活
-		generalSettings := operation_setting.GetGeneralSetting()
-		if generalSettings.PingIntervalEnabled && !info.DisablePing {
-			pingInterval := time.Duration(generalSettings.PingIntervalSeconds) * time.Second
-			stopPinger = startPingKeepAlive(c, pingInterval)
-			// 使用defer确保在任何情况下都能停止ping goroutine
-			defer func() {
-				if stopPinger != nil {
-					stopPinger()
-					logger.LogDebug(c, "SSE ping goroutine stopped by defer")
-				}
-			}()
-		}
+		req.Header.Set("Accept", "text/event-stream")
 	}
 
 	resp, err := client.Do(req)
@@ -537,7 +458,7 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	req, err := http.NewRequestWithContext(upstreamRequestContext(c), c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}

@@ -41,7 +41,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 			if service.SundaySearch(data, "usage") {
 				var simpleResponse dto.SimpleResponse
-				if err := common.Unmarshal([]byte(data), &simpleResponse); err != nil {
+				if err := common.Unmarshal(common.StringToByteSlice(data), &simpleResponse); err != nil {
 					logger.LogError(c, err.Error())
 					sr.Error(err)
 				} else if simpleResponse.Usage.TotalTokens != 0 {

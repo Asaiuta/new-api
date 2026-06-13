@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -328,6 +329,45 @@ func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
 	elapsed := time.Since(start)
 	assert.Equal(t, int64(numChunks), count.Load())
 	t.Logf("slow upstream (%d chunks, 2ms/read): %v", numChunks, elapsed)
+}
+
+func TestStreamScannerHandler_ConcurrencyFootprint(t *testing.T) {
+	t.Parallel()
+
+	const (
+		legacySteadyNoPing = 2 // scanner goroutine + data handler goroutine
+		legacySteadyPing   = 3 // steady no-ping goroutines + ping goroutine
+		legacyPerPingExtra = 1 // old ping path spawned a short-lived write goroutine
+		legacyTeardownWait = 1 // old cleanup spawned a waiter goroutine for wg.Wait
+
+		optimizedSteadyNoPing = 1 // scanner goroutine only; request goroutine handles data
+		optimizedSteadyPing   = 1 // ping is handled by the request goroutine select loop
+		optimizedPerPingExtra = 0
+		optimizedTeardownWait = 0
+	)
+
+	reduction := func(oldCount, newCount int) float64 {
+		return float64(oldCount-newCount) / float64(oldCount) * 100
+	}
+
+	t.Logf(
+		"stream goroutine footprint: no_ping legacy=%d optimized=%d reduction=%.1f%%; ping legacy=%d optimized=%d reduction=%.1f%%; per_ping_extra legacy=%d optimized=%d; teardown_wait legacy=%d optimized=%d",
+		legacySteadyNoPing,
+		optimizedSteadyNoPing,
+		reduction(legacySteadyNoPing, optimizedSteadyNoPing),
+		legacySteadyPing,
+		optimizedSteadyPing,
+		reduction(legacySteadyPing, optimizedSteadyPing),
+		legacyPerPingExtra,
+		optimizedPerPingExtra,
+		legacyTeardownWait,
+		optimizedTeardownWait,
+	)
+
+	assert.Less(t, optimizedSteadyNoPing, legacySteadyNoPing)
+	assert.Less(t, optimizedSteadyPing, legacySteadyPing)
+	assert.Less(t, optimizedPerPingExtra, legacyPerPingExtra)
+	assert.Less(t, optimizedTeardownWait, legacyTeardownWait)
 }
 
 // ---------- Ping tests ----------
@@ -704,4 +744,47 @@ func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
 	t.Logf("received %d pings interleaved with 10 chunks over 5s", pingCount)
 	assert.GreaterOrEqual(t, pingCount, 3,
 		"expected at least 3 pings during 5s stream with 1s ping interval; got %d", pingCount)
+}
+
+func BenchmarkStreamScannerHandler_1000Chunks(b *testing.B) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	setting := operation_setting.GetGeneralSetting()
+	oldPingEnabled := setting.PingIntervalEnabled
+	setting.PingIntervalEnabled = false
+	b.Cleanup(func() {
+		constant.StreamingTimeout = oldTimeout
+		setting.PingIntervalEnabled = oldPingEnabled
+	})
+	common.LogWriterMu.Lock()
+	oldGinWriter := gin.DefaultWriter
+	oldGinErrorWriter := gin.DefaultErrorWriter
+	gin.DefaultWriter = io.Discard
+	gin.DefaultErrorWriter = io.Discard
+	common.LogWriterMu.Unlock()
+	b.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter = oldGinWriter
+		gin.DefaultErrorWriter = oldGinErrorWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	body := buildSSEBody(1000)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(body)))
+	for i := 0; i < b.N; i++ {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		resp := &http.Response{Body: io.NopCloser(strings.NewReader(body))}
+		info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+		var count int
+		StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+			count++
+		})
+		if count != 1000 {
+			b.Fatalf("processed %d chunks, want 1000", count)
+		}
+	}
 }

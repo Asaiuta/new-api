@@ -1,7 +1,6 @@
 package palm
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 
@@ -54,7 +53,7 @@ func palmStreamHandler(c *gin.Context, resp *http.Response) (*types.NewAPIError,
 	responseText := ""
 	responseId := helper.GetResponseID(c)
 	createdTime := common.GetTimestamp()
-	dataChan := make(chan string)
+	dataChan := make(chan []byte)
 	stopChan := make(chan bool)
 	go func() {
 		responseBody, err := io.ReadAll(resp.Body)
@@ -65,7 +64,7 @@ func palmStreamHandler(c *gin.Context, resp *http.Response) (*types.NewAPIError,
 		}
 		service.CloseResponseBodyGracefully(resp)
 		var palmResponse PaLMChatResponse
-		err = json.Unmarshal(responseBody, &palmResponse)
+		err = common.Unmarshal(responseBody, &palmResponse)
 		if err != nil {
 			common.SysLog("error unmarshalling stream response: " + err.Error())
 			stopChan <- true
@@ -77,23 +76,23 @@ func palmStreamHandler(c *gin.Context, resp *http.Response) (*types.NewAPIError,
 		if len(palmResponse.Candidates) > 0 {
 			responseText = palmResponse.Candidates[0].Content
 		}
-		jsonResponse, err := json.Marshal(fullTextResponse)
+		jsonResponse, err := common.Marshal(fullTextResponse)
 		if err != nil {
 			common.SysLog("error marshalling stream response: " + err.Error())
 			stopChan <- true
 			return
 		}
-		dataChan <- string(jsonResponse)
+		dataChan <- jsonResponse
 		stopChan <- true
 	}()
 	helper.SetEventStreamHeaders(c)
 	c.Stream(func(w io.Writer) bool {
 		select {
 		case data := <-dataChan:
-			c.Render(-1, common.CustomEvent{Data: "data: " + data})
+			_ = helper.WriteBytesData(c, data)
 			return true
 		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			_ = helper.WriteStringData(c, "[DONE]")
 			return false
 		}
 	})
@@ -108,7 +107,7 @@ func palmHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respons
 	}
 	service.CloseResponseBodyGracefully(resp)
 	var palmResponse PaLMChatResponse
-	err = json.Unmarshal(responseBody, &palmResponse)
+	err = common.Unmarshal(responseBody, &palmResponse)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}

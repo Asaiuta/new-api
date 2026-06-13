@@ -1,9 +1,12 @@
 package helper
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -59,26 +62,95 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	if err != nil {
 		common.SysError("error marshalling stream response: " + err.Error())
 	} else {
-		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+		if err := WriteEventBytesData(c, resp.Type, jsonData); err != nil {
+			return err
+		}
 	}
 	_ = FlushWriter(c)
 	return nil
 }
 
 func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
+	_ = WriteEventStringData(c, resp.Type, data)
 	_ = FlushWriter(c)
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) {
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
+	_ = WriteEventStringData(c, resp.Type, data)
 	_ = FlushWriter(c)
 }
 
 func StringData(c *gin.Context, str string) error {
+	if err := WriteStringData(c, str); err != nil {
+		return err
+	}
+	return FlushWriter(c)
+}
+
+func BytesData(c *gin.Context, data []byte) error {
+	if err := WriteBytesData(c, data); err != nil {
+		return err
+	}
+	return FlushWriter(c)
+}
+
+func EventStringData(c *gin.Context, event, data string) error {
+	if err := WriteEventStringData(c, event, data); err != nil {
+		return err
+	}
+	return FlushWriter(c)
+}
+
+func EventBytesData(c *gin.Context, event string, data []byte) error {
+	if err := WriteEventBytesData(c, event, data); err != nil {
+		return err
+	}
+	return FlushWriter(c)
+}
+
+func WriteStringData(c *gin.Context, str string) error {
+	if err := validateStreamWriter(c); err != nil {
+		return err
+	}
+
+	writeFastEventStreamHeaders(c)
+	return writeStringPayload(c, str)
+}
+
+func WriteBytesData(c *gin.Context, data []byte) error {
+	if err := validateStreamWriter(c); err != nil {
+		return err
+	}
+
+	writeFastEventStreamHeaders(c)
+	return writeBytesPayload(c, data)
+}
+
+func WriteEventStringData(c *gin.Context, event, data string) error {
+	if err := validateStreamWriter(c); err != nil {
+		return err
+	}
+
+	writeFastEventStreamHeaders(c)
+	if err := writeEventName(c, event); err != nil {
+		return err
+	}
+	return writeStringPayload(c, data)
+}
+
+func WriteEventBytesData(c *gin.Context, event string, data []byte) error {
+	if err := validateStreamWriter(c); err != nil {
+		return err
+	}
+
+	writeFastEventStreamHeaders(c)
+	if err := writeEventName(c, event); err != nil {
+		return err
+	}
+	return writeBytesPayload(c, data)
+}
+
+func validateStreamWriter(c *gin.Context) error {
 	if c == nil || c.Writer == nil {
 		return errors.New("context or writer is nil")
 	}
@@ -86,9 +158,68 @@ func StringData(c *gin.Context, str string) error {
 	if c.Request != nil && c.Request.Context().Err() != nil {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
+	return nil
+}
 
-	c.Render(-1, common.CustomEvent{Data: "data: " + str})
-	return FlushWriter(c)
+func writeStringPayload(c *gin.Context, str string) error {
+	if _, err := io.WriteString(c.Writer, "data: "); err != nil {
+		return fmt.Errorf("write stream data prefix failed: %w", err)
+	}
+	if strings.Contains(str, "\r") {
+		str = strings.ReplaceAll(str, "\r", "\\r")
+	}
+	if _, err := io.WriteString(c.Writer, str); err != nil {
+		return fmt.Errorf("write stream data failed: %w", err)
+	}
+	if _, err := io.WriteString(c.Writer, "\n\n"); err != nil {
+		return fmt.Errorf("write stream data suffix failed: %w", err)
+	}
+	return nil
+}
+
+func writeBytesPayload(c *gin.Context, data []byte) error {
+	if _, err := io.WriteString(c.Writer, "data: "); err != nil {
+		return fmt.Errorf("write stream data prefix failed: %w", err)
+	}
+	if bytes.IndexByte(data, '\r') >= 0 {
+		data = bytes.ReplaceAll(data, []byte{'\r'}, []byte("\\r"))
+	}
+	if _, err := c.Writer.Write(data); err != nil {
+		return fmt.Errorf("write stream data failed: %w", err)
+	}
+	if _, err := io.WriteString(c.Writer, "\n\n"); err != nil {
+		return fmt.Errorf("write stream data suffix failed: %w", err)
+	}
+	return nil
+}
+
+func writeEventName(c *gin.Context, event string) error {
+	if event == "" {
+		return nil
+	}
+	if _, err := io.WriteString(c.Writer, "event: "); err != nil {
+		return fmt.Errorf("write stream event prefix failed: %w", err)
+	}
+	if strings.ContainsAny(event, "\r\n") {
+		event = strings.NewReplacer("\r", "\\r", "\n", "\\n").Replace(event)
+	}
+	if _, err := io.WriteString(c.Writer, event); err != nil {
+		return fmt.Errorf("write stream event failed: %w", err)
+	}
+	if _, err := io.WriteString(c.Writer, "\n"); err != nil {
+		return fmt.Errorf("write stream event suffix failed: %w", err)
+	}
+	return nil
+}
+
+func writeFastEventStreamHeaders(c *gin.Context) {
+	header := c.Writer.Header()
+	if header.Get("Content-Type") == "" {
+		header.Set("Content-Type", "text/event-stream")
+	}
+	if header.Get("Cache-Control") == "" {
+		header.Set("Cache-Control", "no-cache")
+	}
 }
 
 func PingData(c *gin.Context) error {
@@ -114,7 +245,7 @@ func ObjectData(c *gin.Context, object interface{}) error {
 	if err != nil {
 		return fmt.Errorf("error marshalling object: %w", err)
 	}
-	return StringData(c, string(jsonData))
+	return BytesData(c, jsonData)
 }
 
 func Done(c *gin.Context) {

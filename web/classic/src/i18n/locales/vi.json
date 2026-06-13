@@ -510,6 +510,8 @@
     "例如：-c": "e.g.: -c",
     "例如：/bin/bash": "e.g.: /bin/bash",
     "例如：0001": "ví dụ: 0001",
+    "例如：0.1": "ví dụ: 0.1",
+    "例如：0.2": "ví dụ: 0.2",
     "例如：1000": "ví dụ: 1000",
     "例如：100000": "Ví dụ: 100000",
     "例如：2，就是最低充值2$": "ví dụ: 2, nghĩa là nạp tối thiểu $2",
@@ -564,6 +566,7 @@
     "保存 Turnstile 设置": "Lưu cài đặt Turnstile",
     "保存 WeChat Server 设置": "Lưu cài đặt WeChat Server",
     "保存分组倍率设置": "Lưu cài đặt tỷ lệ nhóm",
+    "保存后将转换为 {{quota}} 内部额度": "Sau khi lưu sẽ chuyển thành {{quota}} hạn mức nội bộ",
     "保存分组相关设置": "Lưu cài đặt liên quan đến nhóm",
     "保存备用码": "Lưu mã dự phòng",
     "保存备用码以备不时之需": "Lưu mã dự phòng cho trường hợp khẩn cấp",
@@ -1442,6 +1445,7 @@
     "开启之后将上游地址替换为服务器地址": "Sau khi bật, địa chỉ thượng nguồn sẽ được thay thế bằng địa chỉ máy chủ",
     "开启后，using_group 会参与 cache key（不同分组隔离）。": "Khi bật, using_group sẽ tham gia vào cache key (cách ly theo nhóm).",
     "开启后，仅\"消费\"和\"错误\"日志将记录您的客户端IP地址": "Sau khi bật, chỉ nhật ký \"tiêu thụ\" và \"lỗi\" sẽ ghi lại địa chỉ IP máy khách của bạn",
+    "开启后，即使用户未开启个人IP记录，也会在消费和错误日志中记录客户端IP": "Sau khi bật, địa chỉ IP máy khách sẽ được ghi vào nhật ký tiêu thụ và lỗi ngay cả khi người dùng chưa bật ghi IP cá nhân",
     "开启后，对免费模型（倍率为0，或者价格为0）的模型也会预消耗额度": "After enabling, free models (ratio 0 or price 0) will also pre-consume quota",
     "开启后，将定期发送ping数据保持连接活跃": "Sau khi bật, dữ liệu ping sẽ được gửi định kỳ để giữ kết nối hoạt động",
     "开启后，当前分组渠道失败时会按顺序尝试下一个分组的渠道": "Sau khi bật, khi kênh nhóm hiện tại thất bại, nó sẽ thử kênh của nhóm tiếp theo theo thứ tự",
@@ -1465,6 +1469,7 @@
     "异步任务退款": "Hoàn tiền tác vụ bất đồng bộ",
     "张图片": "hình ảnh",
     "弱变换": "Biến thể cao",
+    "强制为所有用户记录IP": "Bắt buộc ghi IP cho tất cả người dùng",
     "强制使用 AUTH LOGIN": "Buộc AUTH LOGIN",
     "强制将响应格式化为 OpenAI 标准格式（只适用于OpenAI渠道类型）": "Buộc định dạng phản hồi theo định dạng chuẩn OpenAI (Chỉ dành cho các loại kênh OpenAI)",
     "强制格式化": "Buộc định dạng",
@@ -2921,6 +2926,7 @@
     "系统错误": "Lỗi hệ thống",
     "系统错误，请联系管理员": "Lỗi hệ thống, vui lòng liên hệ quản trị viên",
     "约": "Khoảng",
+    "约 {{amount}} USD": "Khoảng {{amount}} USD",
     "级别": "Cấp độ",
     "索引": "Chỉ mục",
     "紧凑列表": "Danh sách thu gọn",
@@ -4209,6 +4215,10 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "禁止用户解绑第三方登录": "Ngăn người dùng hủy liên kết đăng nhập bên thứ ba",
+    "禁止普通用户解绑自己的自定义 OAuth 登录绑定，管理员仍可在用户管理中解绑。": "Ngăn người dùng thường hủy liên kết đăng nhập OAuth tùy chỉnh của chính họ. Quản trị viên vẫn có thể hủy liên kết trong phần quản lý người dùng.",
+    "管理员已禁止用户解绑第三方登录": "Quản trị viên đã tắt hủy liên kết đăng nhập bên thứ ba",
+    "已禁止解绑": "Đã tắt hủy liên kết"
   }
 }

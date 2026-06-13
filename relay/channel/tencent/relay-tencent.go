@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -73,10 +72,10 @@ func responseTencent2OpenAI(response *TencentChatResponse) *dto.OpenAITextRespon
 	return &fullTextResponse
 }
 
-func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.ChatCompletionsStreamResponse {
+func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse, created int64) *dto.ChatCompletionsStreamResponse {
 	response := dto.ChatCompletionsStreamResponse{
 		Object:  "chat.completion.chunk",
-		Created: common.GetTimestamp(),
+		Created: created,
 		Model:   "tencent-hunyuan",
 	}
 	if len(TencentResponse.Choices) > 0 {
@@ -91,7 +90,8 @@ func streamResponseTencent2OpenAI(TencentResponse *TencentChatResponse) *dto.Cha
 }
 
 func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
-	var responseText string
+	var responseTextBuilder strings.Builder
+	created := common.GetTimestamp()
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 
@@ -105,15 +105,15 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 		data = strings.TrimPrefix(data, "data:")
 
 		var tencentResponse TencentChatResponse
-		err := common.Unmarshal([]byte(data), &tencentResponse)
+		err := common.Unmarshal(common.StringToByteSlice(data), &tencentResponse)
 		if err != nil {
 			common.SysLog("error unmarshalling stream response: " + err.Error())
 			continue
 		}
 
-		response := streamResponseTencent2OpenAI(&tencentResponse)
+		response := streamResponseTencent2OpenAI(&tencentResponse, created)
 		if len(response.Choices) != 0 {
-			responseText += response.Choices[0].Delta.GetContentString()
+			responseTextBuilder.WriteString(response.Choices[0].Delta.GetContentString())
 		}
 
 		err = helper.ObjectData(c, response)
@@ -130,7 +130,7 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 
 	service.CloseResponseBodyGracefully(resp)
 
-	return service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
+	return service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens()), nil
 }
 
 func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
@@ -140,7 +140,7 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &tencentSb)
+	err = common.Unmarshal(responseBody, &tencentSb)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -193,7 +193,7 @@ func getTencentSign(req TencentChatRequest, adaptor *Adaptor, secId, secKey stri
 	canonicalHeaders := fmt.Sprintf("content-type:%s\nhost:%s\nx-tc-action:%s\n",
 		"application/json", host, strings.ToLower(adaptor.Action))
 	signedHeaders := "content-type;host;x-tc-action"
-	payload, _ := json.Marshal(req)
+	payload, _ := common.Marshal(req)
 	hashedRequestPayload := sha256hex(string(payload))
 	canonicalRequest := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
 		httpRequestMethod,

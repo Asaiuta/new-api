@@ -56,7 +56,7 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	var response dto.TextResponse
 	var cozeResponse CozeChatDetailResponse
 	response.Model = info.UpstreamModelName
-	err = json.Unmarshal(responseBody, &cozeResponse)
+	err = common.Unmarshal(responseBody, &cozeResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -86,7 +86,7 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 			FinishReason: "stop",
 		},
 	}
-	jsonResponse, err := json.Marshal(response)
+	jsonResponse, err := common.Marshal(response)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -102,7 +102,8 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	scanner.Split(bufio.ScanLines)
 	helper.SetEventStreamHeaders(c)
 	id := helper.GetResponseID(c)
-	var responseText string
+	created := common.GetTimestamp()
+	var responseTextBuilder strings.Builder
 
 	var currentEvent string
 	var currentData string
@@ -114,7 +115,7 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		if line == "" {
 			if currentEvent != "" && currentData != "" {
 				// handle last event
-				handleCozeEvent(c, currentEvent, currentData, &responseText, usage, id, info)
+				handleCozeEvent(c, currentEvent, currentData, &responseTextBuilder, usage, id, created, info)
 				currentEvent = ""
 				currentData = ""
 			}
@@ -134,7 +135,7 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 
 	// Last event
 	if currentEvent != "" && currentData != "" {
-		handleCozeEvent(c, currentEvent, currentData, &responseText, usage, id, info)
+		handleCozeEvent(c, currentEvent, currentData, &responseTextBuilder, usage, id, created, info)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -143,18 +144,18 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	helper.Done(c)
 
 	if usage.TotalTokens == 0 {
-		usage = service.ResponseText2Usage(c, responseText, info.UpstreamModelName, c.GetInt("coze_input_count"))
+		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, c.GetInt("coze_input_count"))
 	}
 
 	return usage, nil
 }
 
-func handleCozeEvent(c *gin.Context, event string, data string, responseText *string, usage *dto.Usage, id string, info *relaycommon.RelayInfo) {
+func handleCozeEvent(c *gin.Context, event string, data string, responseText *strings.Builder, usage *dto.Usage, id string, created int64, info *relaycommon.RelayInfo) {
 	switch event {
 	case "conversation.chat.completed":
 		// 将 data 解析为 CozeChatResponseData
 		var chatData CozeChatResponseData
-		err := json.Unmarshal([]byte(data), &chatData)
+		err := common.Unmarshal(common.StringToByteSlice(data), &chatData)
 		if err != nil {
 			common.SysLog("error_unmarshalling_stream_response: " + err.Error())
 			return
@@ -165,31 +166,31 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 		usage.TotalTokens = chatData.Usage.TokenCount
 
 		finishReason := "stop"
-		stopResponse := helper.GenerateStopResponse(id, common.GetTimestamp(), info.UpstreamModelName, finishReason)
+		stopResponse := helper.GenerateStopResponse(id, created, info.UpstreamModelName, finishReason)
 		helper.ObjectData(c, stopResponse)
 
 	case "conversation.message.delta":
 		// 将 data 解析为 CozeChatV3MessageDetail
 		var messageData CozeChatV3MessageDetail
-		err := json.Unmarshal([]byte(data), &messageData)
+		err := common.Unmarshal(common.StringToByteSlice(data), &messageData)
 		if err != nil {
 			common.SysLog("error_unmarshalling_stream_response: " + err.Error())
 			return
 		}
 
 		var content string
-		err = json.Unmarshal(messageData.Content, &content)
+		err = common.Unmarshal(messageData.Content, &content)
 		if err != nil {
 			common.SysLog("error_unmarshalling_stream_response: " + err.Error())
 			return
 		}
 
-		*responseText += content
+		responseText.WriteString(content)
 
 		openaiResponse := dto.ChatCompletionsStreamResponse{
 			Id:      id,
 			Object:  "chat.completion.chunk",
-			Created: common.GetTimestamp(),
+			Created: created,
 			Model:   info.UpstreamModelName,
 		}
 
@@ -203,7 +204,7 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 
 	case "error":
 		var errorData CozeError
-		err := json.Unmarshal([]byte(data), &errorData)
+		err := common.Unmarshal(common.StringToByteSlice(data), &errorData)
 		if err != nil {
 			common.SysLog("error_unmarshalling_stream_response: " + err.Error())
 			return
@@ -242,7 +243,7 @@ func checkIfChatComplete(a *Adaptor, c *gin.Context, info *relaycommon.RelayInfo
 	if err != nil {
 		return fmt.Errorf("read response body failed: %w", err), false
 	}
-	err = json.Unmarshal(responseBody, &cozeResponse)
+	err = common.Unmarshal(responseBody, &cozeResponse)
 	if err != nil {
 		return fmt.Errorf("unmarshal response body failed: %w", err), false
 	}

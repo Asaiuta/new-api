@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -80,7 +79,7 @@ func responseXunfei2OpenAI(response *XunfeiChatResponse) *dto.OpenAITextResponse
 	return &fullTextResponse
 }
 
-func streamResponseXunfei2OpenAI(xunfeiResponse *XunfeiChatResponse) *dto.ChatCompletionsStreamResponse {
+func streamResponseXunfei2OpenAI(xunfeiResponse *XunfeiChatResponse, created int64) *dto.ChatCompletionsStreamResponse {
 	if len(xunfeiResponse.Payload.Choices.Text) == 0 {
 		xunfeiResponse.Payload.Choices.Text = []XunfeiChatResponseTextItem{
 			{
@@ -95,7 +94,7 @@ func streamResponseXunfei2OpenAI(xunfeiResponse *XunfeiChatResponse) *dto.ChatCo
 	}
 	response := dto.ChatCompletionsStreamResponse{
 		Object:  "chat.completion.chunk",
-		Created: common.GetTimestamp(),
+		Created: created,
 		Model:   "SparkDesk",
 		Choices: []dto.ChatCompletionsStreamResponseChoice{choice},
 	}
@@ -135,6 +134,7 @@ func xunfeiStreamHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, a
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed)
 	}
 	helper.SetEventStreamHeaders(c)
+	created := common.GetTimestamp()
 	var usage dto.Usage
 	c.Stream(func(w io.Writer) bool {
 		select {
@@ -142,16 +142,16 @@ func xunfeiStreamHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, a
 			usage.PromptTokens += xunfeiResponse.Payload.Usage.Text.PromptTokens
 			usage.CompletionTokens += xunfeiResponse.Payload.Usage.Text.CompletionTokens
 			usage.TotalTokens += xunfeiResponse.Payload.Usage.Text.TotalTokens
-			response := streamResponseXunfei2OpenAI(&xunfeiResponse)
-			jsonResponse, err := json.Marshal(response)
+			response := streamResponseXunfei2OpenAI(&xunfeiResponse, created)
+			jsonResponse, err := common.Marshal(response)
 			if err != nil {
 				common.SysLog("error marshalling stream response: " + err.Error())
 				return true
 			}
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
+			_ = helper.WriteBytesData(c, jsonResponse)
 			return true
 		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			_ = helper.WriteStringData(c, "[DONE]")
 			return false
 		}
 	})
@@ -165,7 +165,7 @@ func xunfeiHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId s
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed)
 	}
 	var usage dto.Usage
-	var content string
+	var contentBuilder strings.Builder
 	var xunfeiResponse XunfeiChatResponse
 	stop := false
 	for !stop {
@@ -174,7 +174,7 @@ func xunfeiHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId s
 			if len(xunfeiResponse.Payload.Choices.Text) == 0 {
 				continue
 			}
-			content += xunfeiResponse.Payload.Choices.Text[0].Content
+			contentBuilder.WriteString(xunfeiResponse.Payload.Choices.Text[0].Content)
 			usage.PromptTokens += xunfeiResponse.Payload.Usage.Text.PromptTokens
 			usage.CompletionTokens += xunfeiResponse.Payload.Usage.Text.CompletionTokens
 			usage.TotalTokens += xunfeiResponse.Payload.Usage.Text.TotalTokens
@@ -188,10 +188,10 @@ func xunfeiHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId s
 			},
 		}
 	}
-	xunfeiResponse.Payload.Choices.Text[0].Content = content
+	xunfeiResponse.Payload.Choices.Text[0].Content = contentBuilder.String()
 
 	response := responseXunfei2OpenAI(&xunfeiResponse)
-	jsonResponse, err := json.Marshal(response)
+	jsonResponse, err := common.Marshal(response)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -210,8 +210,11 @@ func xunfeiMakeRequest(textRequest dto.GeneralOpenAIRequest, domain, authUrl, ap
 	}
 
 	data := requestOpenAI2Xunfei(textRequest, appId, domain)
-	err = conn.WriteJSON(data)
+	requestData, err := common.Marshal(data)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err = conn.WriteMessage(websocket.TextMessage, requestData); err != nil {
 		return nil, nil, err
 	}
 
@@ -228,7 +231,7 @@ func xunfeiMakeRequest(textRequest dto.GeneralOpenAIRequest, domain, authUrl, ap
 				break
 			}
 			var response XunfeiChatResponse
-			err = json.Unmarshal(msg, &response)
+			err = common.Unmarshal(msg, &response)
 			if err != nil {
 				common.SysLog("error unmarshalling stream response: " + err.Error())
 				break

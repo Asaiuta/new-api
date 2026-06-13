@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -31,6 +32,27 @@ func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	headers, err := processHeaderOverride(info, ctx)
 	require.NoError(t, err)
 	require.Empty(t, headers)
+}
+
+func TestProcessHeaderOverride_NoOverrideFastPath(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}
+
+	headers, err := processHeaderOverride(info, ctx)
+	require.NoError(t, err)
+	require.Nil(t, headers)
+
+	upstreamReq := httptest.NewRequest(http.MethodPost, "https://example.com/v1/chat/completions", nil)
+	applyHeaderOverrideToRequest(upstreamReq, headers)
+	require.Empty(t, upstreamReq.Header)
 }
 
 func TestProcessHeaderOverride_ChannelTestSkipsClientHeaderPlaceholder(t *testing.T) {
@@ -190,4 +212,61 @@ func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.
 	require.Equal(t, "Codex CLI", upstreamReq.Header.Get("Originator"))
 	require.Equal(t, "sess-123", upstreamReq.Header.Get("Session_id"))
 	require.Empty(t, upstreamReq.Header.Get("X-Codex-Beta-Features"))
+}
+
+func TestUpstreamRequestContextUsesClientContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	parentCtx, cancel := context.WithCancel(context.Background())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(parentCtx)
+
+	upstreamCtx := upstreamRequestContext(ctx)
+	require.NoError(t, upstreamCtx.Err())
+
+	cancel()
+	require.ErrorIs(t, upstreamCtx.Err(), context.Canceled)
+}
+
+func BenchmarkProcessHeaderOverrideNoOverride(b *testing.B) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}
+
+	b.Run("legacy_empty_map_path", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			headers := make(map[string]string)
+			source := relaycommon.GetEffectiveHeaderOverride(info)
+			for key, value := range source {
+				str, ok := value.(string)
+				if ok && str != "" {
+					headers[key] = str
+				}
+			}
+			if len(headers) != 0 {
+				b.Fatalf("headers=%v, want empty", headers)
+			}
+		}
+	})
+
+	b.Run("fast_path", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			headers, err := processHeaderOverride(info, ctx)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if headers != nil {
+				b.Fatalf("headers=%v, want nil", headers)
+			}
+		}
+	})
 }

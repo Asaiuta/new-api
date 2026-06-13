@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,14 @@ const (
 	LogTypeRefund  = 6
 	LogTypeLogin   = 7
 )
+
+func shouldRecordRequestIp(userId int) bool {
+	if system_setting.GetLogSettings().ForceRecordIp {
+		return true
+	}
+	settingMap, err := GetUserSetting(userId, false)
+	return err == nil && settingMap.RecordIpLog
+}
 
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
@@ -236,13 +245,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	otherStr := common.MapToJsonStr(other)
-	// 判断是否需要记录 IP
-	needRecordIp := false
-	if settingMap, err := GetUserSetting(userId, false); err == nil {
-		if settingMap.RecordIpLog {
-			needRecordIp = true
-		}
-	}
+	needRecordIp := shouldRecordRequestIp(userId)
 	log := &Log{
 		UserId:           userId,
 		Username:         username,
@@ -299,13 +302,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	otherStr := common.MapToJsonStr(params.Other)
-	// 判断是否需要记录 IP
-	needRecordIp := false
-	if settingMap, err := GetUserSetting(userId, false); err == nil {
-		if settingMap.RecordIpLog {
-			needRecordIp = true
-		}
-	}
+	needRecordIp := shouldRecordRequestIp(userId)
 	log := &Log{
 		UserId:           userId,
 		Username:         username,

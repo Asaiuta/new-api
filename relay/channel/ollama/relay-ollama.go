@@ -1,7 +1,7 @@
 package ollama
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,7 +32,7 @@ func openAIChatToOllamaChat(c *gin.Context, r *dto.GeneralOpenAIRequest) (*Ollam
 		} else if r.ResponseFormat.Type == "json_schema" {
 			if len(r.ResponseFormat.JsonSchema) > 0 {
 				var schema any
-				_ = json.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
+				_ = common.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
 				chatReq.Format = schema
 			}
 		}
@@ -127,7 +127,7 @@ func openAIChatToOllamaChat(c *gin.Context, r *dto.GeneralOpenAIRequest) (*Ollam
 				for _, tc := range parsed {
 					var args interface{}
 					if tc.Function.Arguments != "" {
-						_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+						_ = common.Unmarshal([]byte(tc.Function.Arguments), &args)
 					}
 					if args == nil {
 						args = map[string]any{}
@@ -180,7 +180,7 @@ func openAIToGenerate(c *gin.Context, r *dto.GeneralOpenAIRequest) (*OllamaGener
 			gen.Format = "json"
 		} else if r.ResponseFormat.Type == "json_schema" {
 			var schema any
-			_ = json.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
+			_ = common.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
 			gen.Format = schema
 		}
 	}
@@ -334,7 +334,7 @@ func PullOllamaModel(baseURL, apiKey, modelName string) error {
 	client := &http.Client{
 		Timeout: 30 * 60 * 1000 * time.Millisecond, // 30分钟超时，支持大模型
 	}
-	request, err := http.NewRequest("POST", url, strings.NewReader(string(requestBody)))
+	request, err := http.NewRequest("POST", url, bytes.NewReader(requestBody))
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %v", err)
 	}
@@ -375,7 +375,7 @@ func PullOllamaModelStream(baseURL, apiKey, modelName string, progressCallback f
 	client := &http.Client{
 		Timeout: 60 * 60 * 1000 * time.Millisecond, // 1小时超时，支持超大模型
 	}
-	request, err := http.NewRequest("POST", url, strings.NewReader(string(requestBody)))
+	request, err := http.NewRequest("POST", url, bytes.NewReader(requestBody))
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %v", err)
 	}
@@ -449,7 +449,7 @@ func DeleteOllamaModel(baseURL, apiKey, modelName string) error {
 	}
 
 	client := &http.Client{}
-	request, err := http.NewRequest("DELETE", url, strings.NewReader(string(requestBody)))
+	request, err := http.NewRequest("DELETE", url, bytes.NewReader(requestBody))
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %v", err)
 	}
@@ -510,7 +510,7 @@ func FetchOllamaVersion(baseURL, apiKey string) (string, error) {
 		Version string `json:"version"`
 	}
 
-	if err := json.Unmarshal(body, &versionResp); err != nil {
+	if err := common.Unmarshal(body, &versionResp); err != nil {
 		return "", fmt.Errorf("解析响应失败: %v", err)
 	}
 

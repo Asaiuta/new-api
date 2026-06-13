@@ -49,13 +49,16 @@ import { useUpdateOption } from '../hooks/use-update-option'
 /**
  * react-hook-form 7 treats dotted `name` strings as nested paths. To keep
  * form state, schema validation, and dirty tracking aligned, the
- * `discord.*` and `oidc.*` fields are modeled as nested objects here and
- * flattened back to dotted server keys only when persisting.
+ * `oauth.*`, `discord.*`, and `oidc.*` fields are modeled as nested objects
+ * here and flattened back to dotted server keys only when persisting.
  */
 const oauthSchema = z.object({
   GitHubOAuthEnabled: z.boolean(),
   GitHubClientId: z.string(),
   GitHubClientSecret: z.string(),
+  oauth: z.object({
+    disable_user_unbind: z.boolean(),
+  }),
   discord: z.object({
     enabled: z.boolean(),
     client_id: z.string(),
@@ -89,6 +92,7 @@ type FlatOAuthDefaults = {
   GitHubOAuthEnabled: boolean
   GitHubClientId: string
   GitHubClientSecret: string
+  'oauth.disable_user_unbind': boolean
   'discord.enabled': boolean
   'discord.client_id': string
   'discord.client_secret': string
@@ -119,6 +123,9 @@ const buildFormDefaults = (defaults: FlatOAuthDefaults): OAuthFormValues => ({
   GitHubOAuthEnabled: defaults.GitHubOAuthEnabled,
   GitHubClientId: defaults.GitHubClientId ?? '',
   GitHubClientSecret: defaults.GitHubClientSecret ?? '',
+  oauth: {
+    disable_user_unbind: defaults['oauth.disable_user_unbind'],
+  },
   discord: {
     enabled: defaults['discord.enabled'],
     client_id: defaults['discord.client_id'] ?? '',
@@ -150,6 +157,7 @@ const normalizeFormValues = (values: OAuthFormValues): FlatOAuthDefaults => ({
   GitHubOAuthEnabled: values.GitHubOAuthEnabled,
   GitHubClientId: values.GitHubClientId,
   GitHubClientSecret: values.GitHubClientSecret,
+  'oauth.disable_user_unbind': values.oauth.disable_user_unbind,
   'discord.enabled': values.discord.enabled,
   'discord.client_id': values.discord.client_id,
   'discord.client_secret': values.discord.client_secret,
@@ -292,6 +300,31 @@ export function OAuthSection(props: OAuthSectionProps) {
               isResetDisabled={!form.formState.isDirty}
             />
             <FormDirtyIndicator isDirty={form.formState.isDirty} />
+
+            <FormField
+              control={form.control}
+              name='oauth.disable_user_unbind'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>
+                      {t('Disable user OAuth unbinding')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Prevent users from removing their own custom OAuth bindings. Administrators can still manage bindings.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className='grid w-full grid-cols-6'>

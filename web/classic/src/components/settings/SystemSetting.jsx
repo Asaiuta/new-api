@@ -53,6 +53,7 @@ const SystemSetting = () => {
     GitHubOAuthEnabled: '',
     GitHubClientId: '',
     GitHubClientSecret: '',
+    'oauth.disable_user_unbind': '',
     'discord.enabled': '',
     'discord.client_id': '',
     'discord.client_secret': '',
@@ -185,6 +186,7 @@ const SystemSetting = () => {
           case 'SMTPSSLEnabled':
           case 'SMTPForceAuthLogin':
           case 'LinuxDOOAuthEnabled':
+          case 'oauth.disable_user_unbind':
           case 'discord.enabled':
           case 'oidc.enabled':
           case 'passkey.enabled':
@@ -1082,6 +1084,24 @@ const SystemSetting = () => {
                       >
                         {t('允许通过 Telegram 进行登录')}
                       </Form.Checkbox>
+                      <Form.Checkbox
+                        field="['oauth.disable_user_unbind']"
+                        noLabel
+                        onChange={(e) =>
+                          handleCheckboxChange('oauth.disable_user_unbind', e)
+                        }
+                      >
+                        {t('禁止用户解绑第三方登录')}
+                      </Form.Checkbox>
+                      <Text
+                        type='secondary'
+                        size='small'
+                        style={{ display: 'block', marginBottom: 8 }}
+                      >
+                        {t(
+                          '禁止普通用户解绑自己的自定义 OAuth 登录绑定，管理员仍可在用户管理中解绑。',
+                        )}
+                      </Text>
                       <Form.Checkbox
                         field="['oidc.enabled']"
                         noLabel

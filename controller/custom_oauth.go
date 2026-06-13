@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -524,6 +525,11 @@ func UnbindCustomOAuth(c *gin.Context) {
 	userId := c.GetInt("id")
 	if userId == 0 {
 		common.ApiErrorMsg(c, "未登录")
+		return
+	}
+
+	if system_setting.GetOAuthSettings().DisableUserUnbind {
+		common.ApiErrorMsg(c, "管理员已禁止用户解绑第三方登录")
 		return
 	}
 

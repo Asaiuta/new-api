@@ -21,64 +21,114 @@ const (
 	ModelRequestRateLimitSuccessCountMark = "MRRLS"
 )
 
+var redisModelSuccessLimitCheckScript = redis.NewScript(`
+local key = KEYS[1]
+local max_count = tonumber(ARGV[1])
+local duration = tonumber(ARGV[2])
+local expiration = tonumber(ARGV[3])
+
+if max_count <= 0 then
+	return 1
+end
+
+local now = redis.call('TIME')
+local now_seconds = tonumber(now[1])
+local length = redis.call('LLEN', key)
+
+if length < max_count then
+	return 1
+end
+
+local oldest = redis.call('LINDEX', key, -1)
+local oldest_seconds = tonumber(oldest)
+
+if oldest_seconds == nil then
+	redis.call('DEL', key)
+	return 1
+end
+
+if now_seconds - oldest_seconds < duration then
+	redis.call('EXPIRE', key, expiration)
+	return 0
+end
+
+return 1
+`)
+
+var redisModelSuccessLimitRecordScript = redis.NewScript(`
+local key = KEYS[1]
+local max_count = tonumber(ARGV[1])
+local expiration = tonumber(ARGV[2])
+
+if max_count <= 0 then
+	return 1
+end
+
+local now = redis.call('TIME')
+local now_seconds = tonumber(now[1])
+
+redis.call('LPUSH', key, now_seconds)
+redis.call('LTRIM', key, 0, max_count - 1)
+redis.call('EXPIRE', key, expiration)
+return 1
+`)
+
+func modelRequestRateLimitExpiration(duration int64) time.Duration {
+	expiration := time.Duration(setting.ModelRequestRateLimitDurationMinutes) * time.Minute
+	if expiration <= 0 {
+		expiration = time.Duration(duration) * time.Second
+	}
+	return expiration
+}
+
 // 检查Redis中的请求限制
 func checkRedisRateLimit(ctx context.Context, rdb *redis.Client, key string, maxCount int, duration int64) (bool, error) {
 	// 如果maxCount为0，表示不限制
-	if maxCount == 0 {
+	if maxCount <= 0 {
 		return true, nil
 	}
 
-	// 获取当前计数
-	length, err := rdb.LLen(ctx, key).Result()
+	ctx, cancel := context.WithTimeout(ctx, redisRateLimitOpTimeout)
+	defer cancel()
+
+	result, err := redisModelSuccessLimitCheckScript.Run(
+		ctx,
+		rdb,
+		[]string{key},
+		maxCount,
+		duration,
+		int64(modelRequestRateLimitExpiration(duration).Seconds()),
+	).Int()
 	if err != nil {
 		return false, err
 	}
-
-	// 如果未达到限制，允许请求
-	if length < int64(maxCount) {
-		return true, nil
-	}
-
-	// 检查时间窗口
-	oldTimeStr, _ := rdb.LIndex(ctx, key, -1).Result()
-	oldTime, err := time.Parse(timeFormat, oldTimeStr)
-	if err != nil {
-		return false, err
-	}
-
-	nowTimeStr := time.Now().Format(timeFormat)
-	nowTime, err := time.Parse(timeFormat, nowTimeStr)
-	if err != nil {
-		return false, err
-	}
-	// 如果在时间窗口内已达到限制，拒绝请求
-	subTime := nowTime.Sub(oldTime).Seconds()
-	if int64(subTime) < duration {
-		rdb.Expire(ctx, key, time.Duration(setting.ModelRequestRateLimitDurationMinutes)*time.Minute)
-		return false, nil
-	}
-
-	return true, nil
+	return result == 1, nil
 }
 
 // 记录Redis请求
-func recordRedisRequest(ctx context.Context, rdb *redis.Client, key string, maxCount int) {
+func recordRedisRequest(ctx context.Context, rdb *redis.Client, key string, maxCount int, duration int64) error {
 	// 如果maxCount为0，不记录请求
-	if maxCount == 0 {
-		return
+	if maxCount <= 0 {
+		return nil
 	}
 
-	now := time.Now().Format(timeFormat)
-	rdb.LPush(ctx, key, now)
-	rdb.LTrim(ctx, key, 0, int64(maxCount-1))
-	rdb.Expire(ctx, key, time.Duration(setting.ModelRequestRateLimitDurationMinutes)*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, redisRateLimitOpTimeout)
+	defer cancel()
+
+	return redisModelSuccessLimitRecordScript.Run(
+		ctx,
+		rdb,
+		[]string{key},
+		maxCount,
+		int64(modelRequestRateLimitExpiration(duration).Seconds()),
+	).Err()
 }
 
 // Redis限流处理器
 func redisRateLimitHandler(duration int64, totalMaxCount, successMaxCount int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userId := strconv.Itoa(c.GetInt("id"))
-		ctx := context.Background()
+		ctx := rateLimitContext(c)
 		rdb := common.RDB
 
 		// 1. 检查成功请求数限制
@@ -123,7 +173,9 @@ func redisRateLimitHandler(duration int64, totalMaxCount, successMaxCount int) g
 
 		// 5. 如果请求成功，记录成功请求
 		if c.Writer.Status() < 400 {
-			recordRedisRequest(ctx, rdb, successKey, successMaxCount)
+			if err := recordRedisRequest(ctx, rdb, successKey, successMaxCount, duration); err != nil {
+				fmt.Println("记录成功请求失败:", err.Error())
+			}
 		}
 	}
 }

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 )
 
 const (
@@ -17,34 +19,104 @@ const (
 	EmailVerificationDuration      = 30 // 30秒时间窗口
 )
 
+var redisEmailVerificationLimiter = redis.NewScript(`
+local key = KEYS[1]
+local max_requests = tonumber(ARGV[1])
+local duration = tonumber(ARGV[2])
+
+if max_requests <= 0 then
+	return {1, 0}
+end
+
+local count = redis.call('INCR', key)
+if count == 1 then
+	redis.call('EXPIRE', key, duration)
+end
+
+if count <= max_requests then
+	return {1, 0}
+end
+
+local ttl = redis.call('TTL', key)
+if ttl < 0 then
+	ttl = duration
+	redis.call('EXPIRE', key, duration)
+end
+
+return {0, ttl}
+`)
+
+func redisScriptInt64(v any) (int64, error) {
+	switch value := v.(type) {
+	case int64:
+		return value, nil
+	case int:
+		return int64(value), nil
+	case string:
+		return strconv.ParseInt(value, 10, 64)
+	case []byte:
+		return strconv.ParseInt(string(value), 10, 64)
+	default:
+		return 0, fmt.Errorf("unexpected redis script integer type %T", v)
+	}
+}
+
+func parseEmailVerificationLimitResult(values []any) (bool, int64, error) {
+	if len(values) != 2 {
+		return false, 0, fmt.Errorf("unexpected redis email verification result length %d", len(values))
+	}
+	allowedNum, err := redisScriptInt64(values[0])
+	if err != nil {
+		return false, 0, err
+	}
+	waitSeconds, err := redisScriptInt64(values[1])
+	if err != nil {
+		return false, 0, err
+	}
+	return allowedNum == 1, waitSeconds, nil
+}
+
+func redisEmailVerificationAllow(ctx context.Context, rdb *redis.Client, key string, maxRequests int, durationSeconds int64) (bool, int64, error) {
+	if maxRequests <= 0 {
+		return true, 0, nil
+	}
+	if durationSeconds <= 0 {
+		durationSeconds = EmailVerificationDuration
+	}
+	ctx, cancel := context.WithTimeout(ctx, redisRateLimitOpTimeout)
+	defer cancel()
+
+	values, err := redisEmailVerificationLimiter.Run(
+		ctx,
+		rdb,
+		[]string{key},
+		maxRequests,
+		durationSeconds,
+	).Slice()
+	if err != nil {
+		return false, 0, err
+	}
+	return parseEmailVerificationLimitResult(values)
+}
+
 func redisEmailVerificationRateLimiter(c *gin.Context) {
-	ctx := context.Background()
 	rdb := common.RDB
 	key := "emailVerification:" + EmailVerificationRateLimitMark + ":" + c.ClientIP()
 
-	count, err := rdb.Incr(ctx, key).Result()
+	allowed, waitSeconds, err := redisEmailVerificationAllow(rateLimitContext(c), rdb, key, EmailVerificationMaxRequests, EmailVerificationDuration)
 	if err != nil {
 		// fallback
 		memoryEmailVerificationRateLimiter(c)
 		return
 	}
 
-	// 第一次设置键时设置过期时间
-	if count == 1 {
-		_ = rdb.Expire(ctx, key, time.Duration(EmailVerificationDuration)*time.Second).Err()
-	}
-
-	// 检查是否超出限制
-	if count <= int64(EmailVerificationMaxRequests) {
+	if allowed {
 		c.Next()
 		return
 	}
 
-	// 获取剩余等待时间
-	ttl, err := rdb.TTL(ctx, key).Result()
-	waitSeconds := int64(EmailVerificationDuration)
-	if err == nil && ttl > 0 {
-		waitSeconds = int64(ttl.Seconds())
+	if waitSeconds <= 0 {
+		waitSeconds = int64((time.Duration(EmailVerificationDuration) * time.Second).Seconds())
 	}
 
 	c.JSON(http.StatusTooManyRequests, gin.H{

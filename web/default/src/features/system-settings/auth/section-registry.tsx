@@ -51,6 +51,8 @@ const AUTH_SECTIONS = [
           GitHubOAuthEnabled: settings.GitHubOAuthEnabled,
           GitHubClientId: settings.GitHubClientId,
           GitHubClientSecret: settings.GitHubClientSecret,
+          'oauth.disable_user_unbind':
+            settings['oauth.disable_user_unbind'],
           'discord.enabled': settings['discord.enabled'],
           'discord.client_id': settings['discord.client_id'],
           'discord.client_secret': settings['discord.client_secret'],

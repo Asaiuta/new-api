@@ -2,7 +2,6 @@ package zhipu
 
 import (
 	"bufio"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -129,26 +128,26 @@ func responseZhipu2OpenAI(response *ZhipuResponse) *dto.OpenAITextResponse {
 	return &fullTextResponse
 }
 
-func streamResponseZhipu2OpenAI(zhipuResponse string) *dto.ChatCompletionsStreamResponse {
+func streamResponseZhipu2OpenAI(zhipuResponse string, created int64) *dto.ChatCompletionsStreamResponse {
 	var choice dto.ChatCompletionsStreamResponseChoice
 	choice.Delta.SetContentString(zhipuResponse)
 	response := dto.ChatCompletionsStreamResponse{
 		Object:  "chat.completion.chunk",
-		Created: common.GetTimestamp(),
+		Created: created,
 		Model:   "chatglm",
 		Choices: []dto.ChatCompletionsStreamResponseChoice{choice},
 	}
 	return &response
 }
 
-func streamMetaResponseZhipu2OpenAI(zhipuResponse *ZhipuStreamMetaResponse) (*dto.ChatCompletionsStreamResponse, *dto.Usage) {
+func streamMetaResponseZhipu2OpenAI(zhipuResponse *ZhipuStreamMetaResponse, created int64) (*dto.ChatCompletionsStreamResponse, *dto.Usage) {
 	var choice dto.ChatCompletionsStreamResponseChoice
 	choice.Delta.SetContentString("")
 	choice.FinishReason = &constant.FinishReasonStop
 	response := dto.ChatCompletionsStreamResponse{
 		Id:      zhipuResponse.RequestId,
 		Object:  "chat.completion.chunk",
-		Created: common.GetTimestamp(),
+		Created: created,
 		Model:   "chatglm",
 		Choices: []dto.ChatCompletionsStreamResponseChoice{choice},
 	}
@@ -157,6 +156,7 @@ func streamMetaResponseZhipu2OpenAI(zhipuResponse *ZhipuStreamMetaResponse) (*dt
 
 func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	var usage *dto.Usage
+	created := common.GetTimestamp()
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 	dataChan := make(chan string)
@@ -165,19 +165,13 @@ func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	go func() {
 		for scanner.Scan() {
 			data := scanner.Text()
-			lines := strings.Split(data, "\n")
-			for i, line := range lines {
-				if len(line) < 5 {
-					continue
-				}
-				if line[:5] == "data:" {
-					dataChan <- line[5:]
-					if i != len(lines)-1 {
-						dataChan <- "\n"
-					}
-				} else if line[:5] == "meta:" {
-					metaChan <- line[5:]
-				}
+			if len(data) < 5 {
+				continue
+			}
+			if strings.HasPrefix(data, "data:") {
+				dataChan <- data[5:]
+			} else if strings.HasPrefix(data, "meta:") {
+				metaChan <- data[5:]
 			}
 		}
 		if err := scanner.Err(); err != nil {
@@ -189,32 +183,32 @@ func zhipuStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	c.Stream(func(w io.Writer) bool {
 		select {
 		case data := <-dataChan:
-			response := streamResponseZhipu2OpenAI(data)
-			jsonResponse, err := json.Marshal(response)
+			response := streamResponseZhipu2OpenAI(data, created)
+			jsonResponse, err := common.Marshal(response)
 			if err != nil {
 				common.SysLog("error marshalling stream response: " + err.Error())
 				return true
 			}
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
+			_ = helper.WriteBytesData(c, jsonResponse)
 			return true
 		case data := <-metaChan:
 			var zhipuResponse ZhipuStreamMetaResponse
-			err := json.Unmarshal([]byte(data), &zhipuResponse)
+			err := common.Unmarshal(common.StringToByteSlice(data), &zhipuResponse)
 			if err != nil {
 				common.SysLog("error unmarshalling stream response: " + err.Error())
 				return true
 			}
-			response, zhipuUsage := streamMetaResponseZhipu2OpenAI(&zhipuResponse)
-			jsonResponse, err := json.Marshal(response)
+			response, zhipuUsage := streamMetaResponseZhipu2OpenAI(&zhipuResponse, created)
+			jsonResponse, err := common.Marshal(response)
 			if err != nil {
 				common.SysLog("error marshalling stream response: " + err.Error())
 				return true
 			}
 			usage = zhipuUsage
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
+			_ = helper.WriteBytesData(c, jsonResponse)
 			return true
 		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			_ = helper.WriteStringData(c, "[DONE]")
 			return false
 		}
 	})
@@ -229,7 +223,7 @@ func zhipuHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &zhipuResponse)
+	err = common.Unmarshal(responseBody, &zhipuResponse)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -240,7 +234,7 @@ func zhipuHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		}, resp.StatusCode)
 	}
 	fullTextResponse := responseZhipu2OpenAI(&zhipuResponse)
-	jsonResponse, err := json.Marshal(fullTextResponse)
+	jsonResponse, err := common.Marshal(fullTextResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}

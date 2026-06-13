@@ -82,6 +82,7 @@ export type AuthSettings = {
   GitHubOAuthEnabled: boolean
   GitHubClientId: string
   GitHubClientSecret: string
+  'oauth.disable_user_unbind': boolean
   'discord.enabled': boolean
   'discord.client_id': string
   'discord.client_secret': string
@@ -294,6 +295,7 @@ export type OperationsSettings = {
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
   LogConsumeEnabled: boolean
+  'log.force_record_ip': boolean
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number

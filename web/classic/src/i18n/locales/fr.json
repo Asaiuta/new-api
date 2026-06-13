@@ -517,6 +517,8 @@
     "例如：-c": "e.g.: -c",
     "例如：/bin/bash": "e.g.: /bin/bash",
     "例如：0001": "Par exemple : 0001",
+    "例如：0.1": "Par exemple : 0.1",
+    "例如：0.2": "Par exemple : 0.2",
     "例如：1000": "Par exemple : 1000",
     "例如：100000": "Ex. : 100000",
     "例如：2，就是最低充值2$": "Par exemple : 2, c'est-à-dire un minimum de 2$ de recharge",
@@ -571,6 +573,7 @@
     "保存 Turnstile 设置": "Enregistrer les paramètres Turnstile",
     "保存 WeChat Server 设置": "Enregistrer les paramètres du serveur WeChat",
     "保存分组倍率设置": "Enregistrer les paramètres de ratio de groupe",
+    "保存后将转换为 {{quota}} 内部额度": "Enregistré comme {{quota}} quota interne",
     "保存分组相关设置": "Enregistrer les paramètres liés aux groupes",
     "保存备用码": "Enregistrer les codes de sauvegarde",
     "保存备用码以备不时之需": "Enregistrez les codes de sauvegarde pour les urgences",
@@ -1470,6 +1473,7 @@
     "开启之后将上游地址替换为服务器地址": "Après l'activation, l'adresse en amont sera remplacée par l'adresse du serveur",
     "开启后，using_group 会参与 cache key（不同分组隔离）。": "Une fois activé, using_group fera partie de la clé de cache (isolation par groupe).",
     "开启后，仅\"消费\"和\"错误\"日志将记录您的客户端IP地址": "Après l'activation, seuls les journaux \"consommation\" et \"erreur\" enregistreront votre adresse IP client",
+    "开启后，即使用户未开启个人IP记录，也会在消费和错误日志中记录客户端IP": "Après activation, les adresses IP client sont enregistrées dans les journaux de consommation et d'erreurs, même si l'utilisateur n'a pas activé l'enregistrement IP personnel",
     "开启后，对免费模型（倍率为0，或者价格为0）的模型也会预消耗额度": "Après activation, les modèles gratuits (ratio 0 ou prix 0) préconsommeront également du quota",
     "开启后，将定期发送ping数据保持连接活跃": "Après activation, des données ping seront envoyées périodiquement pour maintenir la connexion active",
     "开启后，当前分组渠道失败时会按顺序尝试下一个分组的渠道": "Après activation, lorsque le canal du groupe actuel échoue, il essaiera le canal du groupe suivant dans l'ordre",
@@ -1493,6 +1497,7 @@
     "异步任务退款": "Remboursement de tâche asynchrone",
     "张图片": "images",
     "弱变换": "Faible variation",
+    "强制为所有用户记录IP": "Forcer l'enregistrement IP pour tous les utilisateurs",
     "强制使用 AUTH LOGIN": "Forcer AUTH LOGIN",
     "强制将响应格式化为 OpenAI 标准格式（只适用于OpenAI渠道类型）": "Forcer le formatage des réponses au format standard OpenAI (uniquement pour les types de canaux OpenAI)",
     "强制格式化": "Forcer le format",
@@ -2672,6 +2677,7 @@
     "系统设置": "Système",
     "系统访问令牌": "Jeton d'accès au système",
     "约": "Environ",
+    "约 {{amount}} USD": "Environ {{amount}} USD",
     "索引": "Index",
     "紧凑列表": "Liste compacte",
     "纯字符串会直接覆盖整条请求头，或者点击“查看 JSON 示例”按 token 规则处理。": "",
@@ -3675,6 +3681,10 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "禁止用户解绑第三方登录": "Empêcher les utilisateurs de dissocier la connexion tierce",
+    "禁止普通用户解绑自己的自定义 OAuth 登录绑定，管理员仍可在用户管理中解绑。": "Empêche les utilisateurs ordinaires de dissocier leurs propres liaisons de connexion OAuth personnalisées. Les administrateurs peuvent toujours les dissocier dans la gestion des utilisateurs.",
+    "管理员已禁止用户解绑第三方登录": "L'administrateur a désactivé la dissociation de la connexion tierce",
+    "已禁止解绑": "Dissociation désactivée"
   }
 }
