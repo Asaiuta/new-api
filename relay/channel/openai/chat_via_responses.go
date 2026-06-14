@@ -103,8 +103,8 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	var (
 		usage       = &dto.Usage{}
-		outputText  strings.Builder
 		usageText   strings.Builder
+		sawText     bool
 		sentStart   bool
 		sentStop    bool
 		sawToolCall bool
@@ -234,7 +234,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		if callID == "" {
 			return true
 		}
-		if outputText.Len() > 0 {
+		if sawText {
 			// Prefer streaming assistant text over tool calls to match non-stream behavior.
 			return true
 		}
@@ -364,8 +364,8 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			}
 
 			if streamResp.Delta != "" {
-				outputText.WriteString(streamResp.Delta)
 				usageText.WriteString(streamResp.Delta)
+				sawText = true
 				delta := streamResp.Delta
 				chunk := &dto.ChatCompletionsStreamResponse{
 					Id:      responseId,
@@ -484,7 +484,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 					info.ClaudeConvertInfo.Usage = usage
 				}
 				finishReason := "stop"
-				if sawToolCall && outputText.Len() == 0 {
+				if sawToolCall && !sawText {
 					finishReason = "tool_calls"
 				}
 				stop := helper.GenerateStopResponse(responseId, createAt, model, finishReason)
@@ -529,7 +529,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			info.ClaudeConvertInfo.Usage = usage
 		}
 		finishReason := "stop"
-		if sawToolCall && outputText.Len() == 0 {
+		if sawToolCall && !sawText {
 			finishReason = "tool_calls"
 		}
 		stop := helper.GenerateStopResponse(responseId, createAt, model, finishReason)

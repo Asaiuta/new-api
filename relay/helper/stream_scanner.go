@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	InitialScannerBufferSize    = 64 << 10  // 64KB (64*1024)
-	DefaultMaxScannerBufferSize = 128 << 20 // 64MB (64*1024*1024) default SSE buffer size
+	InitialScannerBufferSize    = 4 << 10   // 4KB; grows on large SSE lines up to the configured max.
+	DefaultMaxScannerBufferSize = 128 << 20 // 128MB default SSE buffer size.
 	DefaultPingInterval         = 10 * time.Second
 )
 

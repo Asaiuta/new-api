@@ -13,6 +13,72 @@ func commonPointer[T any](value T) *T {
 	return &value
 }
 
+var claudeConversionSink int
+
+func buildClaudeConversionBenchmarkRequest(messageCount int) dto.GeneralOpenAIRequest {
+	messages := make([]dto.Message, 0, messageCount)
+	for i := 0; i < messageCount; i++ {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		messages = append(messages, dto.Message{
+			Role:    role,
+			Content: "hello from benchmark",
+		})
+	}
+	return dto.GeneralOpenAIRequest{
+		Model:    "claude-3-5-sonnet",
+		Messages: messages,
+		Stop:     []interface{}{"END", "STOP"},
+	}
+}
+
+func BenchmarkRequestOpenAI2ClaudeMessage(b *testing.B) {
+	request := buildClaudeConversionBenchmarkRequest(128)
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		converted, err := RequestOpenAI2ClaudeMessage(nil, request)
+		require.NoError(b, err)
+		claudeConversionSink = len(converted.Messages)
+	}
+}
+
+func BenchmarkClaudeRequestConversionSliceCapacity(b *testing.B) {
+	request := buildClaudeConversionBenchmarkRequest(128)
+
+	b.Run("legacy_zero_capacity", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			formatMessages := make([]dto.Message, 0)
+			for _, message := range request.Messages {
+				formatMessages = append(formatMessages, message)
+			}
+			claudeMessages := make([]dto.ClaudeMessage, 0)
+			for _, message := range formatMessages {
+				claudeMessages = append(claudeMessages, dto.ClaudeMessage{Role: message.Role})
+			}
+			claudeConversionSink = len(claudeMessages)
+		}
+	})
+
+	b.Run("preallocated_capacity", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			formatMessages := make([]dto.Message, 0, len(request.Messages))
+			for _, message := range request.Messages {
+				formatMessages = append(formatMessages, message)
+			}
+			claudeMessages := make([]dto.ClaudeMessage, 0, len(formatMessages)+1)
+			for _, message := range formatMessages {
+				claudeMessages = append(claudeMessages, dto.ClaudeMessage{Role: message.Role})
+			}
+			claudeConversionSink = len(claudeMessages)
+		}
+	})
+}
+
 func TestFormatClaudeResponseInfo_MessageStart(t *testing.T) {
 	claudeInfo := &ClaudeResponseInfo{
 		Usage: &dto.Usage{},

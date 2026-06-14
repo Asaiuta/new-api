@@ -251,14 +251,15 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		case string:
 			claudeRequest.StopSequences = []string{textRequest.Stop.(string)}
 		case []interface{}:
-			stopSequences := make([]string, 0)
-			for _, stop := range textRequest.Stop.([]interface{}) {
+			stops := textRequest.Stop.([]interface{})
+			stopSequences := make([]string, 0, len(stops))
+			for _, stop := range stops {
 				stopSequences = append(stopSequences, stop.(string))
 			}
 			claudeRequest.StopSequences = stopSequences
 		}
 	}
-	formatMessages := make([]dto.Message, 0)
+	formatMessages := make([]dto.Message, 0, len(textRequest.Messages))
 	lastMessage := dto.Message{
 		Role: "tool",
 	}
@@ -290,7 +291,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		lastMessage = fmtMessage
 	}
 
-	claudeMessages := make([]dto.ClaudeMessage, 0)
+	claudeMessages := make([]dto.ClaudeMessage, 0, len(formatMessages)+1)
 	isFirstMessage := true
 	// 初始化system消息数组，用于累积多个system消息
 	var systemMessages []dto.ClaudeMediaMessage
@@ -372,8 +373,10 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				}
 				claudeMessage.Content = text
 			} else {
-				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
-				for _, mediaMessage := range message.ParseContent() {
+				contents := message.ParseContent()
+				toolCalls := message.ParseToolCalls()
+				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0, len(contents)+len(toolCalls))
+				for _, mediaMessage := range contents {
 					switch mediaMessage.Type {
 					case "text":
 						if mediaMessage.Text != "" {
@@ -450,7 +453,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				}
 
 				if message.ToolCalls != nil {
-					for _, toolCall := range message.ParseToolCalls() {
+					for _, toolCall := range toolCalls {
 						inputObj := make(map[string]any)
 						if err := common.Unmarshal(common.StringToByteSlice(toolCall.Function.Arguments), &inputObj); err != nil {
 							common.SysLog("tool call function arguments is not a map[string]any: " + fmt.Sprintf("%v", toolCall.Function.Arguments))

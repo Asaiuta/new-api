@@ -788,3 +788,26 @@ func BenchmarkStreamScannerHandler_1000Chunks(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkNewStreamScannerInitialBuffer(b *testing.B) {
+	payload := "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n"
+	bench := func(initialBufferSize int) func(*testing.B) {
+		return func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				scanner := bufio.NewScanner(strings.NewReader(payload))
+				scanner.Buffer(make([]byte, initialBufferSize), getScannerBufferSize())
+				scanner.Split(bufio.ScanLines)
+				if !scanner.Scan() {
+					b.Fatal("scanner did not read payload")
+				}
+				if scanner.Text() == "" {
+					b.Fatal("scanner returned empty payload")
+				}
+			}
+		}
+	}
+
+	b.Run("legacy_64KB_initial_buffer", bench(64<<10))
+	b.Run("small_4KB_initial_buffer", bench(InitialScannerBufferSize))
+}
