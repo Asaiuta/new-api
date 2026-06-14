@@ -140,6 +140,10 @@ func initConstantEnv() {
 	// ForceStreamOption 覆盖请求参数，强制返回usage信息
 	constant.ForceStreamOption = GetEnvOrDefaultBool("FORCE_STREAM_OPTION", true)
 	constant.CountToken = GetEnvOrDefaultBool("CountToken", true)
+	// FastPreConsumeEstimate 预扣费阶段对 OpenAI 模型也使用快速估算（而非 tiktoken 精确计数），
+	// 显著降低大上下文请求的首字节延迟与 CPU 占用；结算仍以上游返回的 usage 为准。
+	// 默认关闭，保持原有精确预扣费行为。
+	constant.FastPreConsumeEstimate = GetEnvOrDefaultBool("FAST_PRE_CONSUME_ESTIMATE", false)
 	constant.GetMediaToken = GetEnvOrDefaultBool("GET_MEDIA_TOKEN", true)
 	constant.GetMediaTokenNotStream = GetEnvOrDefaultBool("GET_MEDIA_TOKEN_NOT_STREAM", false)
 	constant.UpdateTask = GetEnvOrDefaultBool("UPDATE_TASK", true)

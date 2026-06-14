@@ -219,6 +219,10 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 
 	if meta.TokenType == types.TokenTypeTextNumber {
 		tkm += utf8.RuneCountInString(meta.CombineText)
+	} else if constant.FastPreConsumeEstimate {
+		// 预扣费快速估算：对所有模型（含 OpenAI）使用估算而非 tiktoken 精确计数，
+		// 大幅降低大上下文请求的首字节延迟与 CPU 占用。结算仍以上游返回的 usage 为准。
+		tkm += EstimateTokenByModel(model, meta.CombineText)
 	} else {
 		tkm += CountTextToken(meta.CombineText, model)
 	}

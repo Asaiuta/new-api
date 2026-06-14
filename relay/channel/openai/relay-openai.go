@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
@@ -121,6 +122,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	// 检查是否为音频模型
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
+	if canForwardOpenAIStreamImmediately(info, isAudioModel) {
+		return oaiStreamHandlerImmediate(c, info, resp, model), nil
+	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
@@ -148,7 +152,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		var streamResp struct {
 			Usage *dto.Usage `json:"usage"`
 		}
-		err := common.Unmarshal([]byte(secondLastStreamData), &streamResp)
+		err := common.Unmarshal(common.StringToByteSlice(secondLastStreamData), &streamResp)
 		if err == nil && streamResp.Usage != nil && service.ValidUsage(streamResp.Usage) {
 			usage = streamResp.Usage
 			containStreamUsage = true
@@ -184,6 +188,89 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
 	return usage, nil
+}
+
+func canForwardOpenAIStreamImmediately(info *relaycommon.RelayInfo, isAudioModel bool) bool {
+	return info.RelayFormat == types.RelayFormatOpenAI &&
+		info.RelayMode == relayconstant.RelayModeChatCompletions &&
+		!isAudioModel &&
+		!info.ChannelSetting.ForceFormat &&
+		!info.ChannelSetting.ThinkingToContent
+}
+
+func oaiStreamHandlerImmediate(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, model string) *dto.Usage {
+	responseId := helper.GetResponseID(c)
+	createAt := common.GetTimestamp()
+	var systemFingerprint string
+	var containStreamUsage bool
+	var responseTextBuilder strings.Builder
+	var toolCount int
+	usage := &dto.Usage{}
+	var lastStreamData string
+
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		lastStreamData = data
+
+		var streamResponse dto.ChatCompletionsStreamResponse
+		if err := common.Unmarshal(common.StringToByteSlice(data), &streamResponse); err != nil {
+			logger.LogError(c, "error processing stream token data: "+err.Error())
+			sr.Error(err)
+			if writeErr := helper.StringData(c, data); writeErr != nil {
+				sr.Error(writeErr)
+			}
+			return
+		}
+
+		if streamResponse.Id != "" {
+			responseId = streamResponse.Id
+		}
+		if streamResponse.Created != 0 {
+			createAt = streamResponse.Created
+		}
+		if streamResponse.Model != "" {
+			model = streamResponse.Model
+		}
+		if fingerprint := streamResponse.GetSystemFingerprint(); fingerprint != "" {
+			systemFingerprint = fingerprint
+		}
+		_ = ProcessStreamResponse(streamResponse, &responseTextBuilder, &toolCount)
+
+		if service.ValidUsage(streamResponse.Usage) {
+			containStreamUsage = true
+			usage = streamResponse.Usage
+		}
+
+		if shouldForwardImmediateOpenAIChunk(info, &streamResponse) {
+			if err := helper.StringData(c, data); err != nil {
+				sr.Error(err)
+			}
+		}
+	})
+
+	if !containStreamUsage {
+		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
+		usage.CompletionTokens += toolCount * 7
+	}
+
+	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
+	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	return usage
+}
+
+func shouldForwardImmediateOpenAIChunk(info *relaycommon.RelayInfo, response *dto.ChatCompletionsStreamResponse) bool {
+	if info.ShouldIncludeUsage || !service.ValidUsage(response.Usage) {
+		return true
+	}
+	return streamResponseHasVisibleDelta(response)
+}
+
+func streamResponseHasVisibleDelta(response *dto.ChatCompletionsStreamResponse) bool {
+	for _, choice := range response.Choices {
+		if choice.Delta.GetContentString() != "" || choice.Delta.GetReasoningContent() != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

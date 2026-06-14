@@ -4,22 +4,31 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+
+	"github.com/bytedance/sonic"
 )
 
+// jsonAPI is the sonic configuration used for all marshal/unmarshal operations.
+// ConfigStd mirrors encoding/json semantics exactly (HTML escaping, sorted map
+// keys, compact marshaler output) so swapping in sonic changes performance only,
+// not output bytes. On platforms where sonic lacks JIT support (non amd64/arm64,
+// or unsupported Go versions) sonic transparently falls back to encoding/json.
+var jsonAPI = sonic.ConfigStd
+
 func Unmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
+	return jsonAPI.Unmarshal(data, v)
 }
 
 func UnmarshalJsonStr(data string, v any) error {
-	return json.Unmarshal(StringToByteSlice(data), v)
+	return jsonAPI.UnmarshalFromString(data, v)
 }
 
 func DecodeJson(reader io.Reader, v any) error {
-	return json.NewDecoder(reader).Decode(v)
+	return jsonAPI.NewDecoder(reader).Decode(v)
 }
 
 func Marshal(v any) ([]byte, error) {
-	return json.Marshal(v)
+	return jsonAPI.Marshal(v)
 }
 
 func GetJsonType(data json.RawMessage) string {

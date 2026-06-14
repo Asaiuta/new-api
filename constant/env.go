@@ -6,6 +6,7 @@ var MaxFileDownloadMB int
 var StreamScannerMaxBufferMB int
 var ForceStreamOption bool
 var CountToken bool
+var FastPreConsumeEstimate bool
 var GetMediaToken bool
 var GetMediaTokenNotStream bool
 var UpdateTask bool
