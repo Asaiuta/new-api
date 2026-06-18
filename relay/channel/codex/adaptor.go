@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -174,8 +175,10 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	if req.Get("OpenAI-Beta") == "" {
 		req.Set("OpenAI-Beta", "responses=experimental")
 	}
-	if req.Get("originator") == "" {
-		req.Set("originator", "codex_cli_rs")
+	if req.Get("originator") == "" && service.IsCodexOfficialClientByHeaders("", c.Request.Header.Get("originator")) {
+		if originator := strings.TrimSpace(c.Request.Header.Get("originator")); originator != "" {
+			req.Set("originator", originator)
+		}
 	}
 
 	// chatgpt.com/backend-api/codex/responses is strict about Content-Type.

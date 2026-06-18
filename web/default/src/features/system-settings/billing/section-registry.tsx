@@ -68,6 +68,8 @@ const BILLING_SECTIONS = [
           quota_setting: {
             enable_free_model_pre_consume:
               settings['quota_setting.enable_free_model_pre_consume'],
+            fast_pre_consume_estimate:
+              settings['quota_setting.fast_pre_consume_estimate'],
           },
         }}
         quotaPerUnit={settings.QuotaPerUnit}
@@ -197,6 +199,7 @@ const BILLING_SECTIONS = [
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
         }}
+        quotaPerUnit={settings.QuotaPerUnit}
       />
     ),
   },

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ManageUserAction } from '../types'
+import { type BatchManageUserAction, type ManageUserAction } from '../types'
 
 // ============================================================================
 // User Action Messages
@@ -31,9 +31,28 @@ const ACTION_MESSAGES: Record<ManageUserAction, string> = {
   add_quota: 'Quota adjusted successfully',
 }
 
+const BATCH_ACTION_MESSAGES: Record<BatchManageUserAction, string> = {
+  enable: '{{count}} user(s) enabled',
+  disable: '{{count}} user(s) disabled',
+  hard_delete: '{{count}} user(s) deleted',
+  promote: '{{count}} user(s) promoted to admin',
+  demote: '{{count}} user(s) demoted to regular user',
+  add_quota: 'Quota adjusted for {{count}} user(s)',
+  set_group: 'Group updated for {{count}} user(s)',
+}
+
 /**
  * Get success message for user management action
  */
 export function getUserActionMessage(action: ManageUserAction): string {
   return ACTION_MESSAGES[action]
+}
+
+/**
+ * Get success message for batch user management action
+ */
+export function getBatchUserActionMessage(
+  action: BatchManageUserAction
+): string {
+  return BATCH_ACTION_MESSAGES[action]
 }

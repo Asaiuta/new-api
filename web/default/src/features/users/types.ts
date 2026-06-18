@@ -49,6 +49,7 @@ export const userSchema = z.object({
   aff_quota: z.number().optional(),
   aff_history_quota: z.number().optional(),
   inviter_id: z.number().optional(),
+  inviter_username: z.string().optional(),
   linux_do_id: z.string().optional(),
   status: userStatusSchema,
   role: userRoleSchema,
@@ -117,6 +118,36 @@ export type ManageUserAction =
   | 'add_quota'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
+
+export type BatchManageUserAction =
+  | 'enable'
+  | 'disable'
+  | 'hard_delete'
+  | 'promote'
+  | 'demote'
+  | 'add_quota'
+  | 'set_group'
+
+export interface BatchManageUsersPayload {
+  ids: number[]
+  action: BatchManageUserAction
+  mode?: QuotaAdjustMode
+  value?: number
+  group?: string
+}
+
+export interface BatchManageUserFailure {
+  id: number
+  username?: string
+  reason: string
+}
+
+export interface BatchManageUsersResult {
+  action: BatchManageUserAction
+  succeeded: number
+  failed: number
+  failures?: BatchManageUserFailure[]
+}
 
 export interface ManageUserQuotaPayload {
   id: number

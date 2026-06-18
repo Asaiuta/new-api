@@ -233,6 +233,8 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	}
 
 	info.ChannelMeta = channelMeta
+	info.RuntimeHeadersOverride = nil
+	info.UseRuntimeHeadersOverride = false
 
 	// reset some fields based on channel meta
 	// 重置某些字段，例如模型名称等

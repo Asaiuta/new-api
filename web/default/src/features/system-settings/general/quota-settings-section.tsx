@@ -58,6 +58,7 @@ const quotaSchema = z.object({
   }),
   quota_setting: z.object({
     enable_free_model_pre_consume: z.boolean(),
+    fast_pre_consume_estimate: z.boolean(),
   }),
 })
 
@@ -138,6 +139,7 @@ export function QuotaSettingsSection({
       defaultValues.TopUpLink,
       defaultValues.general_setting.docs_link,
       defaultValues.quota_setting.enable_free_model_pre_consume,
+      defaultValues.quota_setting.fast_pre_consume_estimate,
       normalizedQuotaPerUnit,
     ]
   )
@@ -323,6 +325,32 @@ export function QuotaSettingsSection({
                       <FormDescription>
                         {t(
                           'When enabled, zero-cost models also pre-consume quota before final settlement.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={updateOption.isPending}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+            </SettingsFormGridItem>
+
+            <SettingsFormGridItem span='full'>
+              <FormField
+                control={form.control}
+                name='quota_setting.fast_pre_consume_estimate'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Fast Pre-Consume Estimate')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Use the fast token estimator during pre-consume to reduce first-token latency for large requests. Final settlement still uses upstream usage when available.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>

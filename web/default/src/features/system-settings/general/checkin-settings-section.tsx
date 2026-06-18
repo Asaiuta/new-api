@@ -16,11 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useMemo, type ChangeEvent } from 'react'
 import { z } from 'zod'
-import { useForm, type Resolver } from 'react-hook-form'
+import type { Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import {
   Form,
   FormControl,
@@ -39,82 +39,109 @@ import {
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
+import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 
 const schema = z.object({
   enabled: z.boolean(),
-  minQuota: z.coerce.number().int().min(0),
-  maxQuota: z.coerce.number().int().min(0),
+  minQuota: z.coerce.number().min(0),
+  maxQuota: z.coerce.number().min(0),
 })
 
 type Values = z.infer<typeof schema>
 
+const DEFAULT_QUOTA_PER_USD = 500000
+
+function normalizeQuotaPerUnit(value: number) {
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_QUOTA_PER_USD
+}
+
+function quotaToUsd(quota: number, quotaPerUnit: number) {
+  return quota / quotaPerUnit
+}
+
+function usdToQuota(usd: number, quotaPerUnit: number) {
+  return Math.max(0, Math.round(usd * quotaPerUnit))
+}
+
+function formatQuota(value: number) {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 0 })
+}
+
 export function CheckinSettingsSection({
   defaultValues,
+  quotaPerUnit,
 }: {
   defaultValues: {
     enabled: boolean
     minQuota: number
     maxQuota: number
   }
+  quotaPerUnit: number
 }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const {
+    enabled: defaultEnabled,
+    minQuota: defaultMinQuota,
+    maxQuota: defaultMaxQuota,
+  } = defaultValues
+  const normalizedQuotaPerUnit = normalizeQuotaPerUnit(quotaPerUnit)
+  const formDefaults = useMemo(
+    () => ({
+      enabled: defaultEnabled,
+      minQuota: quotaToUsd(defaultMinQuota, normalizedQuotaPerUnit),
+      maxQuota: quotaToUsd(defaultMaxQuota, normalizedQuotaPerUnit),
+    }),
+    [defaultEnabled, defaultMinQuota, defaultMaxQuota, normalizedQuotaPerUnit]
+  )
 
-  const form = useForm<Values>({
-    resolver: zodResolver(schema) as unknown as Resolver<Values>,
-    defaultValues: {
-      enabled: defaultValues.enabled,
-      minQuota: defaultValues.minQuota,
-      maxQuota: defaultValues.maxQuota,
-    },
-  })
+  const handleNumberChange =
+    (onChange: (value: number | string) => void) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      onChange(
+        event.target.value === '' ? '' : event.currentTarget.valueAsNumber
+      )
+    }
 
-  const { isDirty, isSubmitting } = form.formState
+  const { form, handleSubmit, isDirty, isSubmitting } =
+    useSettingsForm<Values>({
+      resolver: zodResolver(schema) as Resolver<Values, unknown, Values>,
+      defaultValues: formDefaults,
+      onSubmit: async (_data, changedFields) => {
+        for (const [key, value] of Object.entries(changedFields)) {
+          const option =
+            key === 'minQuota'
+              ? {
+                  key: 'checkin_setting.min_quota',
+                  value: usdToQuota(Number(value), normalizedQuotaPerUnit),
+                }
+              : key === 'maxQuota'
+                ? {
+                    key: 'checkin_setting.max_quota',
+                    value: usdToQuota(Number(value), normalizedQuotaPerUnit),
+                  }
+                : {
+                    key: 'checkin_setting.enabled',
+                    value: Boolean(value),
+                  }
+
+          await updateOption.mutateAsync(option)
+        }
+      },
+    })
+
   const enabled = form.watch('enabled')
 
-  async function onSubmit(values: Values) {
-    const updates: Array<{ key: string; value: string }> = []
-
-    if (values.enabled !== defaultValues.enabled) {
-      updates.push({
-        key: 'checkin_setting.enabled',
-        value: String(values.enabled),
-      })
-    }
-
-    if (values.minQuota !== defaultValues.minQuota) {
-      updates.push({
-        key: 'checkin_setting.min_quota',
-        value: String(values.minQuota),
-      })
-    }
-
-    if (values.maxQuota !== defaultValues.maxQuota) {
-      updates.push({
-        key: 'checkin_setting.max_quota',
-        value: String(values.maxQuota),
-      })
-    }
-
-    if (updates.length === 0) {
-      toast.info(t('No changes to save'))
-      return
-    }
-
-    for (const update of updates) {
-      await updateOption.mutateAsync(update)
-    }
-
-    form.reset(values)
-  }
+  const getQuotaPreview = (usd: number | string) =>
+    formatQuota(usdToQuota(Number(usd) || 0, normalizedQuotaPerUnit))
 
   return (
     <SettingsSection title={t('Check-in Settings')}>
       <Form {...form}>
-        <SettingsForm onSubmit={form.handleSubmit(onSubmit)} autoComplete='off'>
+        <SettingsForm onSubmit={handleSubmit} autoComplete='off'>
           <SettingsPageFormActions
-            onSave={form.handleSubmit(onSubmit)}
+            onSave={handleSubmit}
             isSaving={updateOption.isPending || isSubmitting}
             isSaveDisabled={!isDirty}
             saveLabel='Save check-in settings'
@@ -150,17 +177,23 @@ export function CheckinSettingsSection({
                 name='minQuota'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Minimum check-in quota')}</FormLabel>
+                    <FormLabel>{t('Minimum check-in quota (USD)')}</FormLabel>
                     <FormControl>
                       <Input
                         type='number'
                         min={0}
-                        placeholder={t('1000')}
-                        {...field}
+                        step='0.001'
+                        value={field.value ?? ''}
+                        onChange={handleNumberChange(field.onChange)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('Minimum quota amount awarded for check-in')}
+                      {t('Saved as {{quota}} internal quota.', {
+                        quota: getQuotaPreview(field.value),
+                      })}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -172,17 +205,23 @@ export function CheckinSettingsSection({
                 name='maxQuota'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Maximum check-in quota')}</FormLabel>
+                    <FormLabel>{t('Maximum check-in quota (USD)')}</FormLabel>
                     <FormControl>
                       <Input
                         type='number'
                         min={0}
-                        placeholder={t('10000')}
-                        {...field}
+                        step='0.001'
+                        value={field.value ?? ''}
+                        onChange={handleNumberChange(field.onChange)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('Maximum quota amount awarded for check-in')}
+                      {t('Saved as {{quota}} internal quota.', {
+                        quota: getQuotaPreview(field.value),
+                      })}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

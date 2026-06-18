@@ -24,6 +24,8 @@ import type {
   SearchUsersParams,
   UserFormData,
   ManageUserAction,
+  BatchManageUsersPayload,
+  BatchManageUsersResult,
   ManageUserQuotaPayload,
   ApiResponse,
 } from './types'
@@ -112,6 +114,16 @@ export async function manageUser(
   action: ManageUserAction
 ): Promise<ApiResponse<Partial<User>>> {
   const res = await api.post('/api/user/manage', { id, action })
+  return res.data
+}
+
+/**
+ * Batch manage users (status, role, quota, group, hard delete)
+ */
+export async function batchManageUsers(
+  payload: BatchManageUsersPayload
+): Promise<ApiResponse<BatchManageUsersResult>> {
+  const res = await api.post('/api/user/batch/manage', payload)
   return res.data
 }
 

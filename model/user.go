@@ -46,6 +46,7 @@ type User struct {
 	AffQuota         int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
 	AffHistoryQuota  int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
 	InviterId        int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	InviterUsername  string         `json:"inviter_username,omitempty" gorm:"-:all"`
 	DeletedAt        gorm.DeletedAt `gorm:"index"`
 	LinuxDOId        string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
@@ -222,7 +223,45 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 		return nil, 0, err
 	}
 
+	if err = attachInviterUsernames(DB, users); err != nil {
+		return nil, 0, err
+	}
+
 	return users, total, nil
+}
+
+func attachInviterUsernames(db *gorm.DB, users []*User) error {
+	inviterIds := make([]int, 0, len(users))
+	seen := make(map[int]struct{}, len(users))
+	for _, user := range users {
+		if user == nil || user.InviterId <= 0 {
+			continue
+		}
+		if _, ok := seen[user.InviterId]; ok {
+			continue
+		}
+		seen[user.InviterId] = struct{}{}
+		inviterIds = append(inviterIds, user.InviterId)
+	}
+	if len(inviterIds) == 0 {
+		return nil
+	}
+
+	var inviters []User
+	if err := db.Unscoped().Select("id", "username").Where("id IN ?", inviterIds).Find(&inviters).Error; err != nil {
+		return err
+	}
+	inviterNames := make(map[int]string, len(inviters))
+	for _, inviter := range inviters {
+		inviterNames[inviter.Id] = inviter.Username
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		user.InviterUsername = inviterNames[user.InviterId]
+	}
+	return nil
 }
 
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int) ([]*User, int64, error) {
@@ -287,6 +326,10 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 
 	// 提交事务
 	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err = attachInviterUsernames(DB, users); err != nil {
 		return nil, 0, err
 	}
 
